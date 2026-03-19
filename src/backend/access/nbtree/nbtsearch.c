@@ -104,6 +104,7 @@ _bt_search(Relation rel, Relation heaprel, BTScanInsert key, Buffer *bufP,
 	Assert(access == BT_READ || heaprel != NULL);
 
 	/* Get the root page to start with */
+    //取root page
 	*bufP = _bt_getroot(rel, heaprel, access);
 
 	/* If index is empty and access = BT_READ, no root page is created. */
@@ -121,7 +122,7 @@ _bt_search(Relation rel, Relation heaprel, BTScanInsert key, Buffer *bufP,
 		BlockNumber child;
 		BTStack		new_stack;
 
-		/*
+		/*向右走。page可能被分裂
 		 * Race -- the page we just grabbed may have split since we read its
 		 * downlink in its parent page (or the metapage).  If it has, we may
 		 * need to move right to its new sibling.  Do that.
@@ -142,15 +143,15 @@ _bt_search(Relation rel, Relation heaprel, BTScanInsert key, Buffer *bufP,
 		if (P_ISLEAF(opaque))
 			break;
 
-		/*
+		/*中间节点
 		 * Find the appropriate pivot tuple on this page.  Its downlink points
 		 * to the child page that we're about to descend to.
 		 */
-		offnum = _bt_binsrch(rel, key, *bufP);
-		itemid = PageGetItemId(page, offnum);
-		itup = (IndexTuple) PageGetItem(page, itemid);
-		Assert(BTreeTupleIsPivot(itup) || !key->heapkeyspace);
-		child = BTreeTupleGetDownLink(itup);
+		offnum = _bt_binsrch(rel, key, *bufP);//取slot
+		itemid = PageGetItemId(page, offnum);//取item id
+		itup = (IndexTuple) PageGetItem(page, itemid);//取indextuple
+		Assert(BTreeTupleIsPivot(itup) || !key->heapkeyspace);//？？
+		child = BTreeTupleGetDownLink(itup);//child page的blockNumber
 
 		/*
 		 * We need to save the location of the pivot tuple we chose in a new
@@ -160,7 +161,7 @@ _bt_search(Relation rel, Relation heaprel, BTScanInsert key, Buffer *bufP,
 		 */
 		new_stack = (BTStack) palloc(sizeof(BTStackData));
 		new_stack->bts_blkno = BufferGetBlockNumber(*bufP);
-		new_stack->bts_offset = offnum;
+		new_stack->bts_offset = offnum;//slot
 		new_stack->bts_parent = stack_in;
 
 		/*
@@ -269,11 +270,11 @@ _bt_moveright(Relation rel,
 	{
 		page = BufferGetPage(buf);
 		opaque = BTPageGetOpaque(page);
-
+        //已经到达最右边的节点。
 		if (P_RIGHTMOST(opaque))
 			break;
 
-		/*
+		/*不容易理解
 		 * Finish any incomplete splits we encounter along the way.
 		 */
 		if (forupdate && P_INCOMPLETE_SPLIT(opaque))
@@ -296,8 +297,8 @@ _bt_moveright(Relation rel,
 			buf = _bt_getbuf(rel, blkno, access);
 			continue;
 		}
-
-		if (P_IGNORE(opaque) || _bt_compare(rel, key, page, P_HIKEY) >= cmpval)
+        //dead page or half dead or (key > high key or key >= high key)，向右走
+		if (P_IGNORE(opaque) || _bt_compare(rel, key, page, P_HIKEY) >= cmpval)//key比high key大，向右走
 		{
 			/* step right one page */
 			buf = _bt_relandgetbuf(rel, buf, opaque->btpo_next, access);
@@ -337,7 +338,7 @@ static OffsetNumber
 _bt_binsrch(Relation rel,
 			BTScanInsert key,
 			Buffer buf)
-{
+{//buf 可能是中间页面 也可能是叶子页面
 	Page		page;
 	BTPageOpaque opaque;
 	OffsetNumber low,
@@ -353,10 +354,11 @@ _bt_binsrch(Relation rel,
 	/* scantid-set callers must use _bt_binsrch_insert() on leaf pages */
 	Assert(!P_ISLEAF(opaque) || key->scantid == NULL);
 
-	low = P_FIRSTDATAKEY(opaque);
-	high = PageGetMaxOffsetNumber(page);
+    //slot
+	low = P_FIRSTDATAKEY(opaque);//第一个实际item序号。最右边page是1，其它是2.
+	high = PageGetMaxOffsetNumber(page);//item 个数
 
-	/*
+	/*没有item。返回第一个可用slot
 	 * If there are no keys on the page, return the first available slot. Note
 	 * this covers two cases: the page is really empty (no keys), or it
 	 * contains only a high key.  The latter case is possible after vacuuming.
@@ -366,7 +368,7 @@ _bt_binsrch(Relation rel,
 	if (unlikely(high < low))
 		return low;
 
-	/*
+	/*????
 	 * Binary search to find the first key on the page >= scan key, or first
 	 * key > scankey when nextkey is true.
 	 *
@@ -388,7 +390,7 @@ _bt_binsrch(Relation rel,
 
 		/* We have low <= mid < high, so mid points at a real slot */
 
-		result = _bt_compare(rel, key, page, mid);
+		result = _bt_compare(rel, key, page, mid);//scankey vs mid
 
 		if (result >= cmpval)
 			low = mid + 1;
@@ -450,7 +452,7 @@ _bt_binsrch(Relation rel,
  * bounds.  Only used during insertion, and only on the leaf page that it
  * looks like caller will insert tuple on.  Exclusive-locked and pinned
  * leaf page is contained within insertstate.
- *
+ *不理解
  * Caches the bounds fields in insertstate so that a subsequent call can
  * reuse the low and strict high bounds of original binary search.  Callers
  * that use these fields directly must be prepared for the case where low
@@ -484,7 +486,7 @@ _bt_binsrch_insert(Relation rel, BTInsertState insertstate)
 	Assert(insertstate->postingoff == 0);
 
 	if (!insertstate->bounds_valid)
-	{
+	{//第一次执行。
 		/* Start new binary search */
 		low = P_FIRSTDATAKEY(opaque);
 		high = PageGetMaxOffsetNumber(page);
@@ -539,7 +541,7 @@ _bt_binsrch_insert(Relation rel, BTInsertState insertstate)
 				stricthigh = high;
 		}
 
-		/*
+		/*不明白
 		 * If tuple at offset located by binary search is a posting list whose
 		 * TID range overlaps with caller's scantid, perform posting list
 		 * binary search to set postingoff for caller.  Caller must split the
@@ -701,11 +703,13 @@ _bt_compare(Relation rel,
 	 * Force result ">" if target item is first data item on an internal page
 	 * --- see NOTE above.
 	 */
+     //内部page。第一个数据key。-inf
 	if (!P_ISLEAF(opaque) && offnum == P_FIRSTDATAKEY(opaque))
 		return 1;
 
+    //取indexTuple的位置
 	itup = (IndexTuple) PageGetItem(page, PageGetItemId(page, offnum));
-	ntupatts = BTreeTupleGetNAtts(itup, rel);
+	ntupatts = BTreeTupleGetNAtts(itup, rel);//index tuple可能是部份key数据。被截断过。
 
 	/*
 	 * The scan key is set up with the attribute number associated with each
@@ -722,7 +726,7 @@ _bt_compare(Relation rel,
 	ncmpkey = Min(ntupatts, key->keysz);
 	Assert(key->heapkeyspace || ncmpkey == key->keysz);
 	Assert(!BTreeTupleIsPosting(itup) || key->allequalimage);
-	scankey = key->scankeys;
+	scankey = key->scankeys;//scankey 会切换到下一个scankey
 	for (int i = 1; i <= ncmpkey; i++)
 	{
 		Datum		datum;
@@ -732,22 +736,23 @@ _bt_compare(Relation rel,
 
 		if (scankey->sk_flags & SK_ISNULL)	/* key is NULL */
 		{
-			if (isNull)
+			if (isNull) //列是NULL。NULL 等于 NULL？不是说NULL与NULL不相等吗?
 				result = 0;		/* NULL "=" NULL */
 			else if (scankey->sk_flags & SK_BT_NULLS_FIRST)
+                //列不是NULL。如果要求NULL在前，NULL < 非NULL
 				result = -1;	/* NULL "<" NOT_NULL */
 			else
 				result = 1;		/* NULL ">" NOT_NULL */
 		}
 		else if (isNull)		/* key is NOT_NULL and item is NULL */
-		{
+		{//key不是NULL。列是NULL。
 			if (scankey->sk_flags & SK_BT_NULLS_FIRST)
 				result = 1;		/* NOT_NULL ">" NULL */
 			else
 				result = -1;	/* NOT_NULL "<" NULL */
 		}
 		else
-		{
+		{//都不是NULL。用比较运算表达式。
 			/*
 			 * The sk_func needs to be passed the index value as left arg and
 			 * the sk_argument as right arg (they might be of different
@@ -762,7 +767,7 @@ _bt_compare(Relation rel,
 													 scankey->sk_argument));
 
 			if (!(scankey->sk_flags & SK_BT_DESC))
-				INVERT_COMPARE_RESULT(result);
+				INVERT_COMPARE_RESULT(result);//反转
 		}
 
 		/* if the keys are unequal, return the difference */
@@ -781,18 +786,20 @@ _bt_compare(Relation rel,
 	 * scankey won't, so explicitly excluding non-key attributes isn't
 	 * necessary.
 	 */
+     //index tuple 可能被截断过。被截断的key属性被认为是-inf
 	if (key->keysz > ntupatts)
-		return 1;
+		return 1;//scan key个数更多。就更大
 
+    //到此处key属性没有被截断。用heapTid 与 scantid 来比较。
 	/*
 	 * Use the heap TID attribute and scantid to try to break the tie.  The
 	 * rules are the same as any other key attribute -- only the
 	 * representation differs.
 	 */
-	heapTid = BTreeTupleGetHeapTID(itup);
-	if (key->scantid == NULL)
-	{
-		/*
+	heapTid = BTreeTupleGetHeapTID(itup);//indextuple的heapTid
+	if (key->scantid == NULL)//scankey没有scantid。
+	{//此时heapTid也可能为NULL。
+		/*这段逻辑不容易理解
 		 * Forward scans have a scankey that is considered greater than a
 		 * truncated pivot tuple if and when the scankey has equal values for
 		 * attributes up to and including the least significant untruncated
@@ -815,6 +822,7 @@ _bt_compare(Relation rel,
 		 * attributes.  The heap TID attribute is the last key attribute in
 		 * every index, of course, but other than that it isn't special.
 		 */
+         //heapTid == NULL表示heap tid 被截断过。被截断的key属性被认为是-inf
 		if (!key->backward && key->keysz == ntupatts && heapTid == NULL &&
 			key->heapkeyspace)
 			return 1;
@@ -827,22 +835,25 @@ _bt_compare(Relation rel,
 	 * Treat truncated heap TID as minus infinity, since scankey has a key
 	 * attribute value (scantid) that would otherwise be compared directly
 	 */
+     //heapTid == NULL表示heap tid 被截断过。被截断的key属性被认为是-inf
 	Assert(key->keysz == IndexRelationGetNumberOfKeyAttributes(rel));
 	if (heapTid == NULL)
-		return 1;
+		return 1;//此时scantid不为NULL
 
-	/*
+    //scantid 与 heapTid 都不为NULL
+	/*？？
 	 * Scankey must be treated as equal to a posting list tuple if its scantid
 	 * value falls within the range of the posting list.  In all other cases
 	 * there can only be a single heap TID value, which is compared directly
 	 * with scantid.
 	 */
 	Assert(ntupatts >= IndexRelationGetNumberOfKeyAttributes(rel));
+    //比较scantid 与 heapTid
 	result = ItemPointerCompare(key->scantid, heapTid);
 	if (result <= 0 || !BTreeTupleIsPosting(itup))
 		return result;
 	else
-	{
+	{//indexTuple是posting
 		result = ItemPointerCompare(key->scantid,
 									BTreeTupleGetMaxHeapTID(itup));
 		if (result > 0)
@@ -2480,7 +2491,7 @@ _bt_walk_left(Relation rel, Buffer buf)
 	return InvalidBuffer;
 }
 
-/*
+/*向下深入到指定level的page。
  * _bt_get_endpoint() -- Find the first or last page on a given tree level
  *
  * If the index is empty, we will return InvalidBuffer; any other failure

@@ -838,7 +838,7 @@ ReadBufferWithoutRelcache(RelFileLocator rlocator, ForkNumber forkNum,
 							 mode, strategy);
 }
 
-/*
+/*内部调用链长。不容易完整理解
  * Convenience wrapper around ExtendBufferedRelBy() extending by one block.
  */
 Buffer
@@ -4890,7 +4890,7 @@ FlushOneBuffer(Buffer buffer)
 	FlushBuffer(bufHdr, NULL, IOOBJECT_RELATION, IOCONTEXT_NORMAL);
 }
 
-/*
+/*unpin
  * ReleaseBuffer -- release the pin on a buffer
  */
 void
@@ -5151,7 +5151,7 @@ LockBuffer(Buffer buffer, int mode)
 
 /*
  * Acquire the content_lock for the buffer, but only if we don't have to wait.
- *
+ * try lock。加锁不成功，返回false。加锁成功，返回true。
  * This assumes the caller wants BUFFER_LOCK_EXCLUSIVE mode.
  */
 bool

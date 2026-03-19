@@ -152,7 +152,7 @@ _bt_doinsert(Relation rel, IndexTuple itup,
 	 */
 	insertstate.itup = itup;
 	insertstate.itemsz = MAXALIGN(IndexTupleSize(itup));
-	insertstate.itup_key = itup_key;
+	insertstate.itup_key = itup_key;//scankey
 	insertstate.bounds_valid = false;
 	insertstate.buf = InvalidBuffer;
 	insertstate.postingoff = 0;
@@ -164,7 +164,7 @@ search:
 	 * searching from the root page.  insertstate.buf will hold a buffer that
 	 * is locked in exclusive mode afterwards.
 	 */
-	stack = _bt_search_insert(rel, heapRel, &insertstate);
+	stack = _bt_search_insert(rel, heapRel, &insertstate);//搜索插入位置。返回路径栈
 
 	/*
 	 * checkingunique inserts are not allowed to go ahead when two tuples with
@@ -256,7 +256,7 @@ search:
 		 * checkingunique.
 		 */
 		newitemoff = _bt_findinsertloc(rel, &insertstate, checkingunique,
-									   indexUnchanged, stack, heapRel);
+									   indexUnchanged, stack, heapRel);//确定插入位置
 		_bt_insertonpg(rel, heapRel, itup_key, insertstate.buf, InvalidBuffer,
 					   stack, itup, insertstate.itemsz, newitemoff,
 					   insertstate.postingoff, false);
@@ -287,7 +287,7 @@ search:
  * fastpath optimization and page splits below).  insertstate->buf is set to
  * the address of the leaf-page buffer, which is write-locked and pinned in
  * all cases (if necessary by creating a new empty root page for caller).
- *
+ * 没理解这个优化
  * The fastpath optimization avoids most of the work of searching the tree
  * repeatedly when a single backend inserts successive new tuples on the
  * rightmost leaf page of an index.  A backend cache of the rightmost leaf
@@ -381,7 +381,7 @@ _bt_search_insert(Relation rel, Relation heaprel, BTInsertState insertstate)
 					  BT_WRITE);
 }
 
-/*
+/*细节理解的难度挺大的
  *	_bt_check_unique() -- Check for violation of unique index constraint
  *
  * Returns InvalidTransactionId if there is no conflict, else an xact ID
@@ -440,7 +440,7 @@ _bt_check_unique(Relation rel, BTInsertState insertstate, Relation heapRel,
 	 * in the fastpath below, but also in the _bt_findinsertloc() call later.
 	 */
 	Assert(!insertstate->bounds_valid);
-	offset = _bt_binsrch_insert(rel, insertstate);
+	offset = _bt_binsrch_insert(rel, insertstate);//leaf page中的slot。返回第一个大于等于scankey的slot。
 
 	/*
 	 * Scan over all equal tuples, looking for live conflicts.
@@ -450,7 +450,7 @@ _bt_check_unique(Relation rel, BTInsertState insertstate, Relation heapRel,
 	Assert(itup_key->scantid == NULL);
 	for (;;)
 	{
-		/*
+		/*看不懂。
 		 * Each iteration of the loop processes one heap TID, not one index
 		 * tuple.  Current offset number for page isn't usually advanced on
 		 * iterations that process heap TIDs from posting list tuples.
@@ -501,14 +501,14 @@ _bt_check_unique(Relation rel, BTInsertState insertstate, Relation heapRel,
 			 * doesn't seem worth it.
 			 */
 			if (!inposting)
-				curitemid = PageGetItemId(page, offset);
+				curitemid = PageGetItemId(page, offset);//取itemid
 			if (inposting || !ItemIdIsDead(curitemid))
 			{
 				ItemPointerData htid;
 				bool		all_dead = false;
 
 				if (!inposting)
-				{
+				{//普通tuple
 					/* Plain tuple, or first TID in posting list tuple */
 					if (_bt_compare(rel, itup_key, page, offset) != 0)
 						break;	/* we're past all the equal tuples */
@@ -517,7 +517,7 @@ _bt_check_unique(Relation rel, BTInsertState insertstate, Relation heapRel,
 					curitup = (IndexTuple) PageGetItem(page, curitemid);
 					Assert(!BTreeTupleIsPivot(curitup));
 				}
-
+                //取index tuple的tid
 				/* okay, we gotta fetch the heap tuple using htid ... */
 				if (!BTreeTupleIsPosting(curitup))
 				{
@@ -560,7 +560,7 @@ _bt_check_unique(Relation rel, BTInsertState insertstate, Relation heapRel,
 				else if (table_index_fetch_tuple_check(heapRel, &htid,
 													   &SnapshotDirty,
 													   &all_dead))
-				{
+				{//找到htid的值
 					TransactionId xwait;
 
 					/*
@@ -703,7 +703,7 @@ _bt_check_unique(Relation rel, BTInsertState insertstate, Relation heapRel,
 					prevalldead = false;
 			}
 		}
-
+        //切换到下一个posting 或 下一个tuple 或 下一个page
 		if (inposting && curposti < BTreeTupleGetNPosting(curitup) - 1)
 		{
 			/* Advance to next TID in same posting list */
@@ -896,7 +896,7 @@ _bt_findinsertloc(Relation rel,
 			}
 		}
 
-		/*
+		/*回收空间。防止page split。
 		 * If the target page cannot fit newitem, try to avoid splitting the
 		 * page on insert by performing deletion or deduplication now
 		 */
@@ -971,7 +971,7 @@ _bt_findinsertloc(Relation rel,
 				pg_prng_uint32(&pg_global_prng_state) <= (PG_UINT32_MAX / 100))
 				break;
 
-			_bt_stepright(rel, heapRel, insertstate, stack);
+			_bt_stepright(rel, heapRel, insertstate, stack);//向右走。
 			/* Update local state after stepping right */
 			page = BufferGetPage(insertstate->buf);
 			opaque = BTPageGetOpaque(page);
@@ -988,7 +988,7 @@ _bt_findinsertloc(Relation rel,
 	newitemoff = _bt_binsrch_insert(rel, insertstate);
 
 	if (insertstate->postingoff == -1)
-	{
+	{//不理解
 		/*
 		 * There is an overlapping posting list tuple with its LP_DEAD bit
 		 * set.  We don't want to unnecessarily unset its LP_DEAD bit while
@@ -1104,14 +1104,14 @@ _bt_stepright(Relation rel, Relation heaprel, BTInsertState insertstate,
 static void
 _bt_insertonpg(Relation rel,
 			   Relation heaprel,
-			   BTScanInsert itup_key,
-			   Buffer buf,
-			   Buffer cbuf,
+			   BTScanInsert itup_key,//scankey
+			   Buffer buf,//插入的page
+			   Buffer cbuf,//插入到non-leaf page时，分裂出来的left page
 			   BTStack stack,
-			   IndexTuple itup,
+			   IndexTuple itup,//带插入的index tuple
 			   Size itemsz,
-			   OffsetNumber newitemoff,
-			   int postingoff,
+			   OffsetNumber newitemoff,//插入位置
+			   int postingoff,//posting list position?
 			   bool split_only_page)
 {
 	Page		page;
@@ -1192,8 +1192,8 @@ _bt_insertonpg(Relation rel,
 
 		/* use a mutable copy of itup as our itup from here on */
 		origitup = itup;
-		itup = CopyIndexTuple(origitup);
-		nposting = _bt_swap_posting(itup, oposting, postingoff);
+		itup = CopyIndexTuple(origitup);//会分配新的空间。并复制
+		nposting = _bt_swap_posting(itup, oposting, postingoff);//不像是split posting list?
 		/* itup now contains rightmost/max TID from oposting */
 
 		/* Alter offset so that newitem goes after posting list */
@@ -1213,7 +1213,7 @@ _bt_insertonpg(Relation rel,
 
 		Assert(!split_only_page);
 
-		/* split the buffer into left and right halves */
+		/* split the buffer into left and right halves *///返回right page
 		rbuf = _bt_split(rel, heaprel, itup_key, buf, cbuf, newitemoff, itemsz,
 						 itup, origitup, nposting, postingoff);
 		PredicateLockPageSplit(rel,
@@ -1288,7 +1288,7 @@ _bt_insertonpg(Relation rel,
 		{
 			/* upgrade meta-page if needed */
 			if (metad->btm_version < BTREE_NOVAC_VERSION)
-				_bt_upgrademetapage(metapg);
+				_bt_upgrademetapage(metapg);//？为兼容
 			metad->btm_fastroot = BufferGetBlockNumber(buf);
 			metad->btm_fastlevel = opaque->btpo_level;
 			MarkBufferDirty(metabuf);
@@ -1508,7 +1508,7 @@ _bt_split(Relation rel, Relation heaprel, BTScanInsert itup_key, Buffer buf,
 	 * consequences, since origpage won't have been modified and leftpage is
 	 * only workspace.
 	 */
-	origpage = BufferGetPage(buf);
+	origpage = BufferGetPage(buf);//待分裂的page
 	oopaque = BTPageGetOpaque(origpage);
 	isleaf = P_ISLEAF(oopaque);
 	isrightmost = P_RIGHTMOST(oopaque);
@@ -1543,7 +1543,7 @@ _bt_split(Relation rel, Relation heaprel, BTScanInsert itup_key, Buffer buf,
 									 newitem, &newitemonleft);
 
 	/* Allocate temp buffer for leftpage */
-	leftpage = PageGetTempPage(origpage);
+	leftpage = PageGetTempPage(origpage);//分配临时page
 	_bt_pageinit(leftpage, BufferGetPageSize(buf));
 	lopaque = BTPageGetOpaque(leftpage);
 
@@ -1554,7 +1554,7 @@ _bt_split(Relation rel, Relation heaprel, BTScanInsert itup_key, Buffer buf,
 	lopaque->btpo_flags = oopaque->btpo_flags;
 	lopaque->btpo_flags &= ~(BTP_ROOT | BTP_SPLIT_END | BTP_HAS_GARBAGE);
 	/* set flag in leftpage indicating that rightpage has no downlink yet */
-	lopaque->btpo_flags |= BTP_INCOMPLETE_SPLIT;
+	lopaque->btpo_flags |= BTP_INCOMPLETE_SPLIT;//!!!!!!
 	lopaque->btpo_prev = oopaque->btpo_prev;
 	/* handle btpo_next after rightpage buffer acquired */
 	lopaque->btpo_level = oopaque->btpo_level;
@@ -1653,7 +1653,7 @@ _bt_split(Relation rel, Relation heaprel, BTScanInsert itup_key, Buffer buf,
 			if (lastleftoff == origpagepostingoff)
 				lastleft = nposting;
 		}
-
+        //确定left high key的
 		lefthighkey = _bt_truncate(rel, lastleft, firstright, itup_key);
 		itemsz = IndexTupleSize(lefthighkey);
 	}
@@ -1717,7 +1717,7 @@ _bt_split(Relation rel, Relation heaprel, BTScanInsert itup_key, Buffer buf,
 	 * way because it avoids an unnecessary PANIC when either origpage or its
 	 * existing sibling page are corrupt.
 	 */
-	rbuf = _bt_allocbuf(rel, heaprel);
+	rbuf = _bt_allocbuf(rel, heaprel);//分配新的page
 	rightpage = BufferGetPage(rbuf);
 	rightpagenumber = BufferGetBlockNumber(rbuf);
 	/* rightpage was initialized by _bt_getbuf */
@@ -1783,7 +1783,7 @@ _bt_split(Relation rel, Relation heaprel, BTScanInsert itup_key, Buffer buf,
 	if (!isleaf)
 		minusinfoff = afterrightoff;
 
-	/*
+	/*将原始page中的item转移到left page和right page。此处left page是临时分配的page。
 	 * Now transfer all the data items (non-pivot tuples in isleaf case, or
 	 * additional pivot tuples in !isleaf case) to the appropriate page.
 	 *
@@ -1808,7 +1808,7 @@ _bt_split(Relation rel, Relation heaprel, BTScanInsert itup_key, Buffer buf,
 
 		/* does new item belong before this one? */
 		else if (i == newitemoff)
-		{
+		{//待插入的item在左边还是右边？
 			if (newitemonleft)
 			{
 				Assert(newitemoff <= firstrightoff);
@@ -1883,7 +1883,7 @@ _bt_split(Relation rel, Relation heaprel, BTScanInsert itup_key, Buffer buf,
 		afterrightoff = OffsetNumberNext(afterrightoff);
 	}
 
-	/*
+	/*更新right sibling的prev link。
 	 * We have to grab the original right sibling (if any) and update its prev
 	 * link.  We are guaranteed that this is deadlock-free, since we couple
 	 * the locks in the standard order: left to right.
@@ -1938,7 +1938,7 @@ _bt_split(Relation rel, Relation heaprel, BTScanInsert itup_key, Buffer buf,
 	 * original.  We need to do this before writing the WAL record, so that
 	 * XLogInsert can WAL log an image of the page if necessary.
 	 */
-	PageRestoreTempPage(leftpage, origpage);
+	PageRestoreTempPage(leftpage, origpage);//将临时left page复制回原始page
 	/* leftpage, lopaque must not be used below here */
 
 	MarkBufferDirty(buf);
@@ -1946,7 +1946,7 @@ _bt_split(Relation rel, Relation heaprel, BTScanInsert itup_key, Buffer buf,
 
 	if (!isrightmost)
 	{
-		sopaque->btpo_prev = rightpagenumber;
+		sopaque->btpo_prev = rightpagenumber;//更新right sibling的prev link。
 		MarkBufferDirty(sbuf);
 	}
 
@@ -2098,8 +2098,8 @@ _bt_split(Relation rel, Relation heaprel, BTScanInsert itup_key, Buffer buf,
 static void
 _bt_insert_parent(Relation rel,
 				  Relation heaprel,
-				  Buffer buf,
-				  Buffer rbuf,
+				  Buffer buf,//left page
+				  Buffer rbuf,//right page
 				  BTStack stack,
 				  bool isroot,
 				  bool isonly)
@@ -2120,7 +2120,7 @@ _bt_insert_parent(Relation rel,
 	 * to matter.
 	 */
 	if (isroot)
-	{
+	{//产生新root。增加level。
 		Buffer		rootbuf;
 
 		Assert(stack == NULL);
@@ -2163,7 +2163,7 @@ _bt_insert_parent(Relation rel,
 			 */
 			Assert(!(P_ISLEAF(opaque) &&
 					 BlockNumberIsValid(RelationGetTargetBlock(rel))));
-
+            //？？？？
 			/* Find the leftmost page at the next level up */
 			pbuf = _bt_get_endpoint(rel, opaque->btpo_level + 1, false);
 			/* Set up a phony stack entry pointing there */
@@ -2173,14 +2173,14 @@ _bt_insert_parent(Relation rel,
 			stack->bts_parent = NULL;
 			_bt_relbuf(rel, pbuf);
 		}
-
+        //取left page的hikey
 		/* get high key from left, a strict lower bound for new right page */
 		ritem = (IndexTuple) PageGetItem(page,
 										 PageGetItemId(page, P_HIKEY));
 
 		/* form an index tuple that points at the new right page */
 		new_item = CopyIndexTuple(ritem);
-		BTreeTupleSetDownLink(new_item, rbknum);
+		BTreeTupleSetDownLink(new_item, rbknum);//left page'hikey and right page
 
 		/*
 		 * Re-find and write lock the parent of buf.
@@ -2224,7 +2224,7 @@ _bt_insert_parent(Relation rel,
 	}
 }
 
-/*
+/*incomplete split的意思时，page被分成两个page。但是right page的downlink没有设置。
  * _bt_finish_split() -- Finish an incomplete split
  *
  * A crash or other failure can leave a split incomplete.  The insertion
@@ -2284,7 +2284,7 @@ _bt_finish_split(Relation rel, Relation heaprel, Buffer lbuf, BTStack stack)
 	_bt_insert_parent(rel, heaprel, lbuf, rbuf, stack, wasroot, wasonly);
 }
 
-/*
+/*在上一级page中找到downlink指向child page的page
  *	_bt_getstackbuf() -- Walk back up the tree one step, and find the pivot
  *						 tuple whose downlink points to child page.
  *
@@ -2367,7 +2367,7 @@ _bt_getstackbuf(Relation rel, Relation heaprel, BTStack stack, BlockNumber child
 			if (start > maxoff)
 				start = OffsetNumberNext(maxoff);
 
-			/*
+			/*递增查找
 			 * These loops will check every item on the page --- but in an
 			 * order that's attuned to the probability of where it actually
 			 * is.  Scan to the right first, then to the left.
@@ -2387,7 +2387,7 @@ _bt_getstackbuf(Relation rel, Relation heaprel, BTStack stack, BlockNumber child
 					return buf;
 				}
 			}
-
+            //递减查找
 			for (offnum = OffsetNumberPrev(start);
 				 offnum >= minoff;
 				 offnum = OffsetNumberPrev(offnum))
@@ -2412,11 +2412,11 @@ _bt_getstackbuf(Relation rel, Relation heaprel, BTStack stack, BlockNumber child
 		 * can avoid.  See nbtree/README.
 		 */
 		if (P_RIGHTMOST(opaque))
-		{
+		{//没找到
 			_bt_relbuf(rel, buf);
 			return InvalidBuffer;
 		}
-		blkno = opaque->btpo_next;
+		blkno = opaque->btpo_next;//向右走
 		start = InvalidOffsetNumber;
 		_bt_relbuf(rel, buf);
 	}
@@ -2608,7 +2608,7 @@ _bt_newlevel(Relation rel, Relation heaprel, Buffer lbuf, Buffer rbuf)
 	return rootbuf;
 }
 
-/*
+/*向page添加item 有些特殊的考虑
  *	_bt_pgaddtup() -- add a data item to a particular page during split.
  *
  *		The difference between this routine and a bare PageAddItem call is
@@ -2651,7 +2651,7 @@ _bt_pgaddtup(Page page,
 	return true;
 }
 
-/*
+/*释放一些空间
  * _bt_delete_or_dedup_one_page - Try to avoid a leaf page split.
  *
  * There are three operations performed here: simple index deletion, bottom-up
@@ -2699,7 +2699,7 @@ _bt_delete_or_dedup_one_page(Relation rel, Relation heapRel,
 	Assert(simpleonly || itup_key->heapkeyspace);
 	Assert(!simpleonly || (!checkingunique && !uniquedup && !indexUnchanged));
 
-	/*
+	/*检查哪些item需要删除。
 	 * Scan over all items to see which ones need to be deleted according to
 	 * LP_DEAD flags.  We'll usually manage to delete a few extra items that
 	 * are not marked LP_DEAD in passing.  Often the extra items that actually
@@ -2719,7 +2719,7 @@ _bt_delete_or_dedup_one_page(Relation rel, Relation heapRel,
 	}
 
 	if (ndeletable > 0)
-	{
+	{//删除一些item
 		_bt_simpledel_pass(rel, buffer, heapRel, deletable, ndeletable,
 						   insertstate->itup, minoff, maxoff);
 		insertstate->bounds_valid = false;
@@ -2844,7 +2844,7 @@ _bt_simpledel_pass(Relation rel, Buffer buffer, Relation heapRel,
 		void	   *match;
 
 		if (!BTreeTupleIsPosting(itup))
-		{
+		{//如果index tuple的tid的blockNumber在deadblocks中，则需要删除。
 			tidblock = ItemPointerGetBlockNumber(&itup->t_tid);
 			match = bsearch(&tidblock, deadblocks, ndeadblocks,
 							sizeof(BlockNumber), _bt_blk_cmp);
@@ -2875,7 +2875,7 @@ _bt_simpledel_pass(Relation rel, Buffer buffer, Relation heapRel,
 			for (int p = 0; p < nitem; p++)
 			{
 				ItemPointer tid = BTreeTupleGetPostingN(itup, p);
-
+                //posting tid的blockNumber在deadblocks中，则需要删除。
 				tidblock = ItemPointerGetBlockNumber(tid);
 				match = bsearch(&tidblock, deadblocks, ndeadblocks,
 								sizeof(BlockNumber), _bt_blk_cmp);
@@ -2942,7 +2942,7 @@ _bt_deadblocks(Page page, OffsetNumber *deletable, int ndeletable,
 				ntids;
 	BlockNumber *tidblocks;
 
-	/*
+	/*收集tid的blockNumber。
 	 * Accumulate each TID's block in array whose initial size has space for
 	 * one table block per LP_DEAD-set tuple (plus space for the newitem table
 	 * block).  Array will only need to grow when there are LP_DEAD-marked
@@ -2997,7 +2997,7 @@ _bt_deadblocks(Page page, OffsetNumber *deletable, int ndeletable,
 			}
 		}
 	}
-
+    //排序，去重复。blockNumber
 	qsort(tidblocks, ntids, sizeof(BlockNumber), _bt_blk_cmp);
 	*nblocks = qunique(tidblocks, ntids, sizeof(BlockNumber), _bt_blk_cmp);
 

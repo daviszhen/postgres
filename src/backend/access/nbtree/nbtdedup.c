@@ -30,7 +30,7 @@ static void _bt_singleval_fillfactor(Page page, BTDedupState state,
 static bool _bt_posting_valid(IndexTuple posting);
 #endif
 
-/*
+/*不理解
  * Perform a deduplication pass.
  *
  * The general approach taken here is to perform as much deduplication as
@@ -277,7 +277,7 @@ _bt_dedup_pass(Relation rel, Buffer buf, IndexTuple newitem, Size newitemsz,
 	pfree(state);
 }
 
-/*
+/*不理解
  * Perform bottom-up index deletion pass.
  *
  * See if duplicate index tuples (plus certain nearby tuples) are eligible to
@@ -993,7 +993,7 @@ _bt_update_posting(BTVacuumPosting vacposting)
 	vacposting->itup = itup;
 }
 
-/*
+/*不理解
  * Prepare for a posting list split by swapping heap TID in newitem with heap
  * TID from original posting list (the 'oposting' heap TID located at offset
  * 'postingoff').  Modifies newitem, so caller should pass their own private

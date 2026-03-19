@@ -137,9 +137,9 @@ _bt_mkscankey(Relation rel, IndexTuple itup)
 	int			i;
 
 	itupdesc = RelationGetDescr(rel);
-	indnkeyatts = IndexRelationGetNumberOfKeyAttributes(rel);
+	indnkeyatts = IndexRelationGetNumberOfKeyAttributes(rel);//index中key属性的个数
 	indoption = rel->rd_indoption;
-	tupnatts = itup ? BTreeTupleGetNAtts(itup, rel) : 0;
+	tupnatts = itup ? BTreeTupleGetNAtts(itup, rel) : 0;//tuple中的属性个数
 
 	Assert(tupnatts <= IndexRelationGetNumberOfAttributes(rel));
 
@@ -155,15 +155,15 @@ _bt_mkscankey(Relation rel, IndexTuple itup)
 	else
 	{
 		/* Utility statement callers can set these fields themselves */
-		key->heapkeyspace = true;
-		key->allequalimage = false;
+		key->heapkeyspace = true;//？
+		key->allequalimage = false;//？
 	}
 	key->anynullkeys = false;	/* initial assumption */
 	key->nextkey = false;		/* usual case, required by btinsert */
 	key->backward = false;		/* usual case, required by btinsert */
-	key->keysz = Min(indnkeyatts, tupnatts);
+	key->keysz = Min(indnkeyatts, tupnatts);//key的个数。而不是存储空间大小
 	key->scantid = key->heapkeyspace && itup ?
-		BTreeTupleGetHeapTID(itup) : NULL;
+		BTreeTupleGetHeapTID(itup) : NULL;//取heap tid
 	skey = key->scankeys;
 	for (i = 0; i < indnkeyatts; i++)
 	{
@@ -184,14 +184,14 @@ _bt_mkscankey(Relation rel, IndexTuple itup)
 		 * should never be used.
 		 */
 		if (i < tupnatts)
-			arg = index_getattr(itup, i + 1, itupdesc, &null);
+			arg = index_getattr(itup, i + 1, itupdesc, &null);//取列值
 		else
 		{
 			arg = (Datum) 0;
 			null = true;
 		}
 		flags = (null ? SK_ISNULL : 0) | (indoption[i] << SK_BT_INDOPTION_SHIFT);
-		ScanKeyEntryInitializeWithInfo(&skey[i],
+		ScanKeyEntryInitializeWithInfo(&skey[i],//构造scankey
 									   flags,
 									   (AttrNumber) (i + 1),
 									   InvalidStrategy,
@@ -4625,7 +4625,7 @@ btbuildphasename(int64 phasenum)
 	}
 }
 
-/*
+/*有点复杂
  *	_bt_truncate() -- create tuple without unneeded suffix attributes.
  *
  * Returns truncated pivot index tuple allocated in caller's memory context,

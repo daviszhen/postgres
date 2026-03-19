@@ -1219,7 +1219,7 @@ table_index_fetch_end(struct IndexFetchTableData *scan)
 	scan->rel->rd_tableam->index_fetch_end(scan);
 }
 
-/*
+/*//把tid的数据取到slot中。如果有值，返回true
  * Fetches, as part of an index scan, tuple at `tid` into `slot`, after doing
  * a visibility test according to `snapshot`. If a tuple was found and passed
  * the visibility test, returns true, false otherwise. Note that *tid may be

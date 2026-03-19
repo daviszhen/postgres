@@ -327,7 +327,7 @@ _bt_set_cleanup_info(Relation rel, BlockNumber num_delpages)
  *
  *		If access = BT_WRITE, heaprel must be set; otherwise caller can just
  *		pass NULL.  See _bt_allocbuf for an explanation.
- *
+ *      没理解fast root是什么。
  *		The returned page is not necessarily the true root --- it could be
  *		a "fast root" (a page that is alone in its level due to deletions).
  *		Also, if the root page is split while we are "in flight" to it,
@@ -339,6 +339,11 @@ _bt_set_cleanup_info(Relation rel, BlockNumber num_delpages)
  *
  *		On successful return, the root page is pinned and read-locked.
  *		The metadata page is not locked or pinned on exit.
+ 取meta page信息
+    可能命中amache
+    可能要创建新root
+    可能root被分裂
+ 取root page信息
  */
 Buffer
 _bt_getroot(Relation rel, Relation heaprel, int access)
@@ -373,48 +378,49 @@ _bt_getroot(Relation rel, Relation heaprel, int access)
 		Assert(rootblkno != P_NONE);
 		rootlevel = metad->btm_fastlevel;
 
-		rootbuf = _bt_getbuf(rel, rootblkno, BT_READ);
-		rootpage = BufferGetPage(rootbuf);
-		rootopaque = BTPageGetOpaque(rootpage);
+		rootbuf = _bt_getbuf(rel, rootblkno, BT_READ);//blockno -> buffer
+		rootpage = BufferGetPage(rootbuf);// buffer -> page
+		rootopaque = BTPageGetOpaque(rootpage);//page special pointer
 
-		/*
+		/*有效
 		 * Since the cache might be stale, we check the page more carefully
 		 * here than normal.  We *must* check that it's not deleted. If it's
 		 * not alone on its level, then we reject too --- this may be overly
 		 * paranoid but better safe than sorry.  Note we don't check P_ISROOT,
 		 * because that's not set in a "fast root".
 		 */
-		if (!P_IGNORE(rootopaque) &&
-			rootopaque->btpo_level == rootlevel &&
-			P_LEFTMOST(rootopaque) &&
-			P_RIGHTMOST(rootopaque))
+		if (!P_IGNORE(rootopaque) &&//not deleted and not half-dead
+			rootopaque->btpo_level == rootlevel &&//level is correct
+			P_LEFTMOST(rootopaque) &&//leftmost
+			P_RIGHTMOST(rootopaque))//rightmost
 		{
 			/* OK, accept cached page as the root */
 			return rootbuf;
 		}
-		_bt_relbuf(rel, rootbuf);
-		/* Cache is stale, throw it away */
+		_bt_relbuf(rel, rootbuf);//unlock and unpin root page
+		/* Cache is stale, throw it away *///过时，释放cache
 		if (rel->rd_amcache)
 			pfree(rel->rd_amcache);
 		rel->rd_amcache = NULL;
 	}
 
 	metabuf = _bt_getbuf(rel, BTREE_METAPAGE, BT_READ);
-	metad = _bt_getmeta(rel, metabuf);
+	metad = _bt_getmeta(rel, metabuf);//读meta page信息
 
 	/* if no root page initialized yet, do it */
+    //无root，创建root
 	if (metad->btm_root == P_NONE)
 	{
 		Page		metapg;
 
 		/* If access = BT_READ, caller doesn't want us to create root yet */
-		if (access == BT_READ)
+		if (access == BT_READ)//只读，不创建root
 		{
 			_bt_relbuf(rel, metabuf);
 			return InvalidBuffer;
 		}
 
-		/* trade in our read lock for a write lock */
+		/* trade in our read lock for a write lock *///释放锁，再加写锁。保持pin
 		_bt_unlockbuf(rel, metabuf);
 		_bt_lockbuf(rel, metabuf, BT_WRITE);
 
@@ -423,7 +429,7 @@ _bt_getroot(Relation rel, Relation heaprel, int access)
 		 * the time we released the read lock and acquired the write lock, we
 		 * must avoid doing it again.
 		 */
-		if (metad->btm_root != P_NONE)
+		if (metad->btm_root != P_NONE)//root被其它进程创建，不再创建
 		{
 			/*
 			 * Metadata initialized by someone else.  In order to guarantee no
@@ -431,11 +437,11 @@ _bt_getroot(Relation rel, Relation heaprel, int access)
 			 * over again.  (Is that really true? But it's hardly worth trying
 			 * to optimize this case.)
 			 */
-			_bt_relbuf(rel, metabuf);
-			return _bt_getroot(rel, heaprel, access);
+			_bt_relbuf(rel, metabuf);//unlock and unpin meta page
+			return _bt_getroot(rel, heaprel, access);//递归重获取root
 		}
 
-		/*
+		/*分配新root page
 		 * Get, initialize, write, and leave a lock of the appropriate type on
 		 * the new root page.  Since this is the first page in the tree, it's
 		 * a leaf as well as the root.
@@ -457,7 +463,7 @@ _bt_getroot(Relation rel, Relation heaprel, int access)
 		/* upgrade metapage if needed */
 		if (metad->btm_version < BTREE_NOVAC_VERSION)
 			_bt_upgrademetapage(metapg);
-
+        //更新meta page的root信息
 		metad->btm_root = rootblkno;
 		metad->btm_level = 0;
 		metad->btm_fastroot = rootblkno;
@@ -503,7 +509,7 @@ _bt_getroot(Relation rel, Relation heaprel, int access)
 
 		END_CRIT_SECTION();
 
-		/*
+		/*释放写锁，加读锁
 		 * swap root write lock for read lock.  There is no danger of anyone
 		 * else accessing the new root page while it's unlocked, since no one
 		 * else knows where it is yet.
@@ -512,7 +518,7 @@ _bt_getroot(Relation rel, Relation heaprel, int access)
 		_bt_lockbuf(rel, rootbuf, BT_READ);
 
 		/* okay, metadata is correct, release lock on it without caching */
-		_bt_relbuf(rel, metabuf);
+		_bt_relbuf(rel, metabuf);//unlock and unpin meta page
 	}
 	else
 	{
@@ -638,7 +644,7 @@ _bt_gettrueroot(Relation rel)
 
 	for (;;)
 	{
-		rootbuf = _bt_relandgetbuf(rel, rootbuf, rootblkno, BT_READ);
+		rootbuf = _bt_relandgetbuf(rel, rootbuf, rootblkno, BT_READ);//新page 是读锁
 		rootpage = BufferGetPage(rootbuf);
 		rootopaque = BTPageGetOpaque(rootpage);
 
@@ -646,6 +652,7 @@ _bt_gettrueroot(Relation rel)
 			break;
 
 		/* it's dead, Jim.  step right one page */
+        //被分裂了。向右边走
 		if (P_RIGHTMOST(rootopaque))
 			elog(ERROR, "no live root page found in index \"%s\"",
 				 RelationGetRelationName(rel));
@@ -826,7 +833,7 @@ _bt_checkpage(Relation rel, Buffer buf)
 
 /*
  *	_bt_getbuf() -- Get an existing block in a buffer, for read or write.
- *
+ * 读page到内存。并加锁
  *		The general rule in nbtree is that it's never okay to access a
  *		page without holding both a buffer pin and a buffer lock on
  *		the page's buffer.
@@ -864,6 +871,7 @@ _bt_getbuf(Relation rel, BlockNumber blkno, int access)
  * Callers are required to pass a valid heaprel.  We need heaprel so that we
  * can handle generating a snapshotConflictHorizon that makes reusing a page
  * from the FSM safe for queries that may be running on standbys.
+ 先从fsm分配，没有后再分配新page
  */
 Buffer
 _bt_allocbuf(Relation rel, Relation heaprel)
@@ -900,12 +908,12 @@ _bt_allocbuf(Relation rel, Relation heaprel)
 	 */
 	for (;;)
 	{
-		blkno = GetFreeIndexPage(rel);
+		blkno = GetFreeIndexPage(rel);//返回空闲page
 		if (blkno == InvalidBlockNumber)
 			break;
 		buf = ReadBuffer(rel, blkno);
 		if (_bt_conditionallockbuf(rel, buf))
-		{
+		{//加锁成功
 			page = BufferGetPage(buf);
 
 			/*
@@ -964,11 +972,11 @@ _bt_allocbuf(Relation rel, Relation heaprel)
 		{
 			elog(DEBUG2, "FSM returned nonlockable page");
 			/* couldn't get lock, so just drop pin */
-			ReleaseBuffer(buf);
+			ReleaseBuffer(buf);//unpin
 		}
 	}
 
-	/*
+	/*没有空闲page
 	 * Extend the relation by one page. Need to use RBM_ZERO_AND_LOCK or we
 	 * risk a race condition against btvacuumscan --- see comments therein.
 	 * This forces us to repeat the valgrind request that _bt_lockbuf()
@@ -978,7 +986,7 @@ _bt_allocbuf(Relation rel, Relation heaprel)
 	buf = ExtendBufferedRel(BMR_REL(rel), MAIN_FORKNUM, NULL, EB_LOCK_FIRST);
 	if (!RelationUsesLocalBuffers(rel))
 		VALGRIND_MAKE_MEM_DEFINED(BufferGetPage(buf), BLCKSZ);
-
+    //分配新page
 	/* Initialize the new page before returning it */
 	page = BufferGetPage(buf);
 	Assert(PageIsNew(page));
@@ -1006,15 +1014,15 @@ _bt_relandgetbuf(Relation rel, Buffer obuf, BlockNumber blkno, int access)
 
 	Assert(BlockNumberIsValid(blkno));
 	if (BufferIsValid(obuf))
-		_bt_unlockbuf(rel, obuf);
-	buf = ReleaseAndReadBuffer(obuf, rel, blkno);
-	_bt_lockbuf(rel, buf, access);
+		_bt_unlockbuf(rel, obuf);//unlock and unpin page
+	buf = ReleaseAndReadBuffer(obuf, rel, blkno);//unpin old and pin new
+	_bt_lockbuf(rel, buf, access);//lock new page
 
 	_bt_checkpage(rel, buf);
 	return buf;
 }
 
-/*
+/*unlock and unpin page
  *	_bt_relbuf() -- release a locked buffer.
  *
  * Lock and pin (refcount) are both dropped.
@@ -1471,7 +1479,7 @@ _bt_delitems_cmp(const void *a, const void *b)
 	return pg_cmp_s16(indexdelete1->id, indexdelete2->id);
 }
 
-/*
+/*复杂度较高
  * Try to delete item(s) from a btree leaf page during single-page cleanup.
  *
  * nbtree interface to table_index_delete_tuples().  Deletes a subset of index

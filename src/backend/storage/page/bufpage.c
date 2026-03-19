@@ -173,7 +173,7 @@ PageIsVerifiedExtended(Page page, BlockNumber blkno, int flags)
  *	offsetNumber must be either InvalidOffsetNumber to specify finding a
  *	free line pointer, or a value between FirstOffsetNumber and one past
  *	the last existing item, to specify using that particular line pointer.
- *
+ *不理解
  *	If offsetNumber is valid and flag PAI_OVERWRITE is set, we just store
  *	the item at the specified offsetNumber, which must be either a
  *	currently-unused line pointer, or one past the last existing item.

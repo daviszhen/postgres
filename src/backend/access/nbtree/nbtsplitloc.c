@@ -249,7 +249,7 @@ _bt_findsplitloc(Relation rel,
 	 * right page.)
 	 */
 	Assert(olddataitemstoleft == olddataitemstotal);
-	if (newitemoff > maxoff)
+	if (newitemoff > maxoff)//newitemoff是maxoff+1？
 		_bt_recsplitloc(&state, newitemoff, false, olddataitemstotal, 0);
 
 	/*
@@ -347,7 +347,7 @@ _bt_findsplitloc(Relation rel,
 	/* Determine split interval for default strategy */
 	state.interval = _bt_defaultinterval(&state);
 
-	/*
+	/*不理解
 	 * Determine if default strategy/split interval will produce a
 	 * sufficiently distinguishing split, or if we should change strategies.
 	 * Alternative strategies change the range of split points that are
@@ -427,7 +427,7 @@ _bt_findsplitloc(Relation rel,
 	return firstrightoff;
 }
 
-/*
+/*原理能懂，实现有些细节
  * Subroutine to record a particular point between two tuples (possibly the
  * new item) on page (ie, combination of firstrightoff and newitemonleft
  * settings) in *state for later analysis.  This is also a convenient point to
@@ -448,7 +448,7 @@ _bt_findsplitloc(Relation rel,
 static void
 _bt_recsplitloc(FindSplitData *state,
 				OffsetNumber firstrightoff,
-				bool newitemonleft,
+				bool newitemonleft,//newitem在左边还是右边？
 				int olddataitemstoleft,
 				Size firstrightofforigpagetuplesz)
 {
@@ -558,7 +558,7 @@ _bt_recsplitloc(FindSplitData *state,
 	}
 }
 
-/*
+/*计算每种split point的左右空间大小的delta?
  * Subroutine to assign space deltas to materialized array of candidate split
  * points based on current fillfactor, and to sort array using that fillfactor
  */
@@ -599,7 +599,7 @@ _bt_splitcmp(const void *arg1, const void *arg2)
 	return pg_cmp_s16(split1->curdelta, split2->curdelta);
 }
 
-/*
+/*不理解
  * Subroutine to determine whether or not a non-rightmost leaf page should be
  * split immediately after the would-be original page offset for the
  * new/incoming tuple (or should have leaf fillfactor applied when new item is

@@ -216,12 +216,12 @@ table_index_fetch_tuple_check(Relation rel,
 	bool		call_again = false;
 	bool		found;
 
-	slot = table_slot_create(rel, NULL);
+	slot = table_slot_create(rel, NULL);//创建tuple slot 装数据
 	scan = table_index_fetch_begin(rel);
 	found = table_index_fetch_tuple(scan, tid, snapshot, slot, &call_again,
 									all_dead);
 	table_index_fetch_end(scan);
-	ExecDropSingleTupleTableSlot(slot);
+	ExecDropSingleTupleTableSlot(slot);//释放slot
 
 	return found;
 }

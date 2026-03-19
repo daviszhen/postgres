@@ -43,7 +43,7 @@ ItemPointerEquals(ItemPointer pointer1, ItemPointer pointer2)
 		return false;
 }
 
-/*
+/*用blockNumber和offset 字典比较。而不是指向的数据之间的比较
  * ItemPointerCompare
  *		Generic btree-style comparison for item pointers.
  */

@@ -59,6 +59,7 @@ index_form_tuple(TupleDesc tupleDescriptor,
  *		does not pass values that are stored EXTERNAL.
  *
  *		Allocates returned tuple in provided 'context'.
+ *      返回值：返回indextuple头指针。
  * ----------------
  */
 IndexTuple
@@ -151,20 +152,24 @@ index_form_tuple_context(TupleDesc tupleDescriptor,
 	if (hasnull)
 		infomask |= INDEX_NULL_MASK;
 
+    //计算indextuple头的空间大小。如果有null，要带上null位图。
 	hoff = IndexInfoFindDataOffset(infomask);
 #ifdef TOAST_INDEX_HACK
 	data_size = heap_compute_data_size(tupleDescriptor,
 									   untoasted_values, isnull);
 #else
+    //计算indextuple的数据空间大小。
 	data_size = heap_compute_data_size(tupleDescriptor,
 									   values, isnull);
 #endif
+    //计算indextuple的总空间大小。
 	size = hoff + data_size;
 	size = MAXALIGN(size);		/* be conservative */
 
 	tp = (char *) MemoryContextAllocZero(context, size);
 	tuple = (IndexTuple) tp;
 
+    //将数据填充到indextuple中。
 	heap_fill_tuple(tupleDescriptor,
 #ifdef TOAST_INDEX_HACK
 					untoasted_values,
@@ -172,10 +177,10 @@ index_form_tuple_context(TupleDesc tupleDescriptor,
 					values,
 #endif
 					isnull,
-					(char *) tp + hoff,
+					(char *) tp + hoff,//数据空间起始地址。
 					data_size,
 					&tupmask,
-					(hasnull ? (bits8 *) tp + sizeof(IndexTupleData) : NULL));
+					(hasnull ? (bits8 *) tp + sizeof(IndexTupleData) : NULL));//null位图起始地址。
 
 #ifdef TOAST_INDEX_HACK
 	for (i = 0; i < numberOfAttributes; i++)

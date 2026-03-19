@@ -368,7 +368,7 @@ typedef struct BTVacState
 #define P_FIRSTKEY			((OffsetNumber) 2)
 #define P_FIRSTDATAKEY(opaque)	(P_RIGHTMOST(opaque) ? P_HIKEY : P_FIRSTKEY)
 
-/*
+/*不容易理解
  * Notes on B-Tree tuple format, and key and non-key attributes:
  *
  * INCLUDE B-Tree indexes have non-key attributes.  These are extra
@@ -462,8 +462,8 @@ typedef struct BTVacState
 #define BT_OFFSET_MASK				0x0FFF
 #define BT_STATUS_OFFSET_MASK		0xF000
 /* BT_STATUS_OFFSET_MASK status bits */
-#define BT_PIVOT_HEAP_TID_ATTR		0x1000
-#define BT_IS_POSTING				0x2000
+#define BT_PIVOT_HEAP_TID_ATTR		0x1000 //pivot tuple 中有heap tid
+#define BT_IS_POSTING				0x2000 //non-pivot tuple 是 posting list tuple
 
 /*
  * Mask allocated for number of keys in index tuple must be able to fit
@@ -573,6 +573,7 @@ BTreeTupleSetDownLink(IndexTuple pivot, BlockNumber blkno)
  *
  * Note: This is defined as a macro rather than an inline function to
  * avoid including rel.h.
+ pivot tuple 计算方法不同
  */
 #define BTreeTupleGetNAtts(itup, rel)	\
 	( \
@@ -662,16 +663,16 @@ BTreeTupleGetHeapTID(IndexTuple itup)
  */
 static inline ItemPointer
 BTreeTupleGetMaxHeapTID(IndexTuple itup)
-{
+{//取最大的heap tid.
 	Assert(!BTreeTupleIsPivot(itup));
-
+    //non-pivot tuple 是 posting list tuple
 	if (BTreeTupleIsPosting(itup))
 	{
 		uint16		nposting = BTreeTupleGetNPosting(itup);
 
 		return BTreeTupleGetPostingN(itup, nposting - 1);
 	}
-
+    //non-pivot tuple 不是 posting list tuple
 	return &itup->t_tid;
 }
 
@@ -783,10 +784,10 @@ typedef BTStackData *BTStack;
  */
 typedef struct BTScanInsertData
 {
-	bool		heapkeyspace;
+	bool		heapkeyspace;//理解复杂
 	bool		allequalimage;
 	bool		anynullkeys;
-	bool		nextkey;
+	bool		nextkey;//理解复杂
 	bool		backward;		/* backward index scan? */
 	ItemPointer scantid;		/* tiebreaker for scankeys */
 	int			keysz;			/* Size of scankeys array */

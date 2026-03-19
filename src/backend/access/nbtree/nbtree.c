@@ -190,7 +190,7 @@ btinsert(Relation rel, Datum *values, bool *isnull,
 
 	/* generate an index tuple */
 	itup = index_form_tuple(RelationGetDescr(rel), values, isnull);
-	itup->t_tid = *ht_ctid;
+	itup->t_tid = *ht_ctid;//TID in heap tuple
 
 	result = _bt_doinsert(rel, itup, checkUnique, indexUnchanged, heapRel);
 

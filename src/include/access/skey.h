@@ -63,6 +63,7 @@
  */
 typedef struct ScanKeyData
 {
+    //理解复杂。表或索引列与常数之间的运算符。
 	int			sk_flags;		/* flags, see below */
 	AttrNumber	sk_attno;		/* table or index column number */
 	StrategyNumber sk_strategy; /* operator strategy number */

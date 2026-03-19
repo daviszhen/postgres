@@ -3116,7 +3116,7 @@ TransferPredicateLocksToHeapRelation(Relation relation)
 }
 
 
-/*
+/*不理解
  *		PredicateLockPageSplit
  *
  * Copies any predicate locks for the old page to the new page.

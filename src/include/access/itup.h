@@ -126,8 +126,8 @@ index_getattr(IndexTuple tup, int attnum, TupleDesc tupleDesc, bool *isnull)
 	{
 		if (TupleDescAttr(tupleDesc, attnum - 1)->attcacheoff >= 0)
 		{
-			return fetchatt(TupleDescAttr(tupleDesc, attnum - 1),
-							(char *) tup + IndexInfoFindDataOffset(tup->t_info)
+			return fetchatt(TupleDescAttr(tupleDesc, attnum - 1),//列属性
+							(char *) tup + IndexInfoFindDataOffset(tup->t_info)//数据起始地址
 							+ TupleDescAttr(tupleDesc, attnum - 1)->attcacheoff);
 		}
 		else

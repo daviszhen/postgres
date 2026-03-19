@@ -368,7 +368,7 @@ PageGetItem(Page page, ItemId itemId)
  */
 static inline OffsetNumber
 PageGetMaxOffsetNumber(Page page)
-{
+{//item 个数
 	PageHeader	pageheader = (PageHeader) page;
 
 	if (pageheader->pd_lower <= SizeOfPageHeaderData)

@@ -32,7 +32,7 @@ CATALOG(pg_index,2610,IndexRelationId) BKI_SCHEMA_MACRO
 	Oid			indrelid BKI_LOOKUP(pg_class);	/* OID of the relation it
 												 * indexes */
 	int16		indnatts;		/* total number of columns in index */
-	int16		indnkeyatts;	/* number of key columns in index */
+	int16		indnkeyatts;	/* number of key columns in index */ //与上述indnatts的区别？
 	bool		indisunique;	/* is this a unique index? */
 	bool		indnullsnotdistinct;	/* null treatment in unique index */
 	bool		indisprimary;	/* is this index for primary key? */

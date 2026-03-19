@@ -430,9 +430,9 @@ heap_fill_tuple(TupleDesc tupleDesc,
 		Form_pg_attribute attr = TupleDescAttr(tupleDesc, i);
 
 		fill_val(attr,
-				 bitP ? &bitP : NULL,
+				 bitP ? &bitP : NULL,//null位图
 				 &bitmask,
-				 &data,
+				 &data,//属性保存的起始地址。二级指针，会被修改
 				 infomask,
 				 values ? values[i] : PointerGetDatum(NULL),
 				 isnull ? isnull[i] : true);
